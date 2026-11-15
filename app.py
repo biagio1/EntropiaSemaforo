@@ -211,104 +211,85 @@ if c_btn2.button("🟡 Yellow"):
 if c_btn3.button("🔴 Red"):
     attiva_allarme_sonoro("ROSSO")
 # ==============================================================================
-# >>>>>> BLOCK >>> C <<< (CHAT LOG READER, PLAYER TRACKER & CSV UPDATER)
+# >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & CSV UPDATER)
 # ==============================================================================
 
-def trova_chat_log_automatico():
-    user_home = os.path.expanduser("~")
-    percorsi_possibili = [
-        os.path.join(user_home, "Documents", "Entropia Universe", "chat.log"),
-        os.path.join(user_home, "OneDrive", "Documents", "Entropia Universe", "chat.log"),
-        os.path.join(user_home, "OneDrive", "Documenti", "Entropia Universe", "chat.log"),
-        r"D:\OneDrive\Documents\Entropia Universe\chat.log",
-        r"D:\Entropia\public_users_data\chat.log",
-        r"D:\Entropia\chat.log",
-        r"C:\Entropia\chat.log"
-    ]
-    for p in percorsi_possibili:
-        if os.path.exists(p):
-            return p
-    return os.path.join(user_home, "Documents", "Entropia Universe", "chat.log")
-
 st.sidebar.markdown("---")
-st.sidebar.subheader("📂 Chat Log File")
-percorso_raw = st.sidebar.text_input(
-    "Path to chat.log:",
-    value=trova_chat_log_automatico()
-)
-percorso_log_scelto = percorso_raw.strip().strip('"').strip("'")
+st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
-def aggiorna_database_da_chatlog(percorso_file):
-    primo_avvio = not os.path.exists(PATH_DATABASE_CSV) or os.path.getsize(PATH_DATABASE_CSV) == 0
-    if not primo_avvio:
+@st.cache_data(ttl=12)
+def scarica_da_entropia_nexus():
+    url = "https://entropianexus.com"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+        "Referer": "https://entropianexus.com"
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=8)
+        if r.status_code == 200:
+            data = r.json()
+            lista_globals = data.get("globals", [])
+            records = []
+            for g in lista_globals:
+                if str(g.get("type", "")).lower() != "hunting":
+                    continue
+                target_mob = str(g.get("target") or "").strip()
+                ped_val = g.get("value")
+                ts_raw = g.get("timestamp")
+                player_nome = str(g.get("player") or "Unknown").strip()
+                if target_mob and ped_val is not None and ts_raw:
+                    ts_utc = pd.to_datetime(ts_raw, utc=True, errors="coerce")
+                    if pd.notna(ts_utc):
+                        ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None)
+                        records.append({
+                            "Timestamp": ts_it,
+                            "Player": player_nome if player_nome else "Unknown",
+                            "Mob": target_mob.title(),
+                            "PED": int(float(ped_val))
+                        })
+            return records, True
+    except Exception:
+        pass
+    return [], False
+
+def aggiorna_database_live():
+    if os.path.exists(PATH_DATABASE_CSV) and os.path.getsize(PATH_DATABASE_CSV) > 0:
         try:
             df_storico = pd.read_csv(PATH_DATABASE_CSV)
-            df_storico['Timestamp'] = pd.to_datetime(df_storico['Timestamp'], errors='coerce')
-            if 'Player' not in df_storico.columns:
-                df_storico['Player'] = "Unknown"
+            df_storico["Timestamp"] = pd.to_datetime(df_storico["Timestamp"], errors="coerce")
+            if "Player" not in df_storico.columns:
+                df_storico["Player"] = "Unknown"
         except Exception:
-            df_storico = pd.DataFrame(columns=['Timestamp', 'Player', 'Mob', 'PED'])
+            df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
     else:
-        df_storico = pd.DataFrame(columns=['Timestamp', 'Player', 'Mob', 'PED'])
+        df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
 
-    log_trovato = bool(percorso_file and os.path.exists(percorso_file))
-    nuovi_record = []
-
-    if log_trovato:
-        pattern = re.compile(
-            r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+\[(?:Globals|System)\]\s*(?:\[\])?\s*(.*?)\s+(?:killed a creature|ha ucciso una creatura|ucciso una creatura)\s+\((.*?)\)\s+(?:with a value of|con un valore di)\s+(\d+)\s*PED",
-            re.IGNORECASE
-        )
-        try:
-            dimensione_file = os.path.getsize(percorso_file)
-            with open(percorso_file, "r", encoding="utf-8", errors="ignore") as f:
-                if "scansione_iniziale_fatta" not in st.session_state:
-                    st.session_state["scansione_iniziale_fatta"] = True
-                    limite_lettura = 10000000
-                else:
-                    limite_lettura = 500000
-                if dimensione_file > limite_lettura:
-                    f.seek(dimensione_file - limite_lettura)
-                    f.readline()
-                for linea in f:
-                    if ("killed a creature" in linea or "ucciso una creatura" in linea) and "PED" in linea:
-                        match = pattern.search(linea)
-                        if match:
-                            ts_str, player_nome, mob_nome, ped_val = match.groups()
-                            ts = pd.to_datetime(ts_str, errors='coerce')
-                            if pd.notna(ts):
-                                player_pulito = player_nome.replace("&quot;", '"').strip() if player_nome.strip() else "Unknown"
-                                nuovi_record.append({
-                                    'Timestamp': ts,
-                                    'Player': player_pulito,
-                                    'Mob': mob_nome.strip().title(),
-                                    'PED': int(ped_val)
-                                })
-        except Exception:
-            pass
+    nuovi_record, api_ok = scarica_da_entropia_nexus()
 
     if nuovi_record:
         df_nuovi = pd.DataFrame(nuovi_record)
         df_totale = pd.concat([df_storico, df_nuovi], ignore_index=True)
-        df_totale = df_totale.dropna(subset=['Timestamp', 'Mob', 'PED'])
-        df_totale['Mob'] = df_totale['Mob'].astype(str).str.strip().str.title()
-        df_totale['Player'] = df_totale['Player'].fillna("Unknown").astype(str).str.replace("&quot;", '"', regex=False).str.strip()
-        df_totale['Ts_Minuto'] = df_totale['Timestamp'].dt.floor('min')
-        df_totale['Ha_Player'] = (df_totale['Player'] != "Unknown").astype(int)
-        df_totale = df_totale.sort_values(['Timestamp', 'Ha_Player'], ascending=[True, True])
-        df_totale = df_totale.drop_duplicates(subset=['Ts_Minuto', 'Mob', 'PED'], keep='last')
-        df_totale = df_totale.drop(columns=['Ts_Minuto', 'Ha_Player']).sort_values('Timestamp', ascending=True)
+        df_totale = df_totale.dropna(subset=["Timestamp", "Mob", "PED"])
+        df_totale["Mob"] = df_totale["Mob"].astype(str).str.strip().str.title()
+        df_totale["Player"] = df_totale["Player"].fillna("Unknown").astype(str).str.strip()
+        df_totale["Ts_Minuto"] = df_totale["Timestamp"].dt.floor("min")
+        df_totale["Ha_Player"] = (df_totale["Player"] != "Unknown").astype(int)
+        df_totale = df_totale.sort_values(["Timestamp", "Ha_Player"], ascending=[True, True])
+        df_totale = df_totale.drop_duplicates(subset=["Ts_Minuto", "Mob", "PED"], keep="last")
+        df_totale = df_totale.drop(columns=["Ts_Minuto", "Ha_Player"]).sort_values("Timestamp", ascending=True)
         df_totale.to_csv(PATH_DATABASE_CSV, index=False)
-        return df_totale, log_trovato
+        return df_totale, api_ok, len(nuovi_record)
 
-    return df_storico, log_trovato
+    return df_storico, api_ok, 0
 
-df_globale, log_ok = aggiorna_database_da_chatlog(percorso_log_scelto)
+df_globale, nexus_ok, letti_ora = aggiorna_database_live()
 
-if log_ok:
-    st.sidebar.success(f"✅ Log connected! ({len(df_globale)} total Globals)")
+if nexus_ok:
+    st.sidebar.success(f"✅ Entropia Nexus LIVE! ({len(df_globale)} total Globals)")
 else:
-    st.sidebar.warning(f"⚠️ chat.log not found (using CSV history: {len(df_globale)} Globals).")
+    st.sidebar.warning(f"⚠️ Nexus API pause (CSV cache: {len(df_globale)} Globals)")
+
 # ==============================================================================
 # >>>>>> BLOCK >>> D <<< (PLANET MOB DATABASE PART 1: A - K)
 # ==============================================================================

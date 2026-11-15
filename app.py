@@ -1,21 +1,23 @@
 # ==============================================================================
-# >>>>>> BLOCK >>> A <<< (SETTINGS, TRAFFIC LIGHT UI & AUDIO)
+# >>>>>> BLOCK >>> A <<< (SETTINGS, TRAFFIC LIGHT UI & BROWSER AUDIO)
 # ==============================================================================
 
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
+import requests
 import os
 import re
 import time
-import threading
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
-try:
-    import winsound
-except ImportError:
-    winsound = None
+TZ_ITALIA = ZoneInfo("Europe/Rome")
+
+def ora_italia_now():
+    return datetime.now(TZ_ITALIA).replace(tzinfo=None)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PATH_DATABASE_CSV = os.path.join(BASE_DIR, "storico_semaforo_pulito.csv")
@@ -69,28 +71,39 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def _play_sound_thread(tipo):
-    try:
-        if winsound:
-            if tipo == "VERDE":
-                winsound.Beep(1000, 150)
-                winsound.Beep(1800, 300)
-            elif tipo == "GIALLO":
-                winsound.Beep(1200, 150)
-                time.sleep(0.08)
-                winsound.Beep(1200, 150)
-            elif tipo == "ROSSO":
-                winsound.Beep(800, 200)
-                winsound.Beep(600, 200)
-                winsound.Beep(400, 400)
-        else:
-            print("\a", end="", flush=True)
-    except Exception:
-        pass
-
 def attiva_allarme_sonoro(tipo):
-    t = threading.Thread(target=_play_sound_thread, args=(tipo,), daemon=True)
-    t.start()
+    if tipo == "VERDE":
+        sequenza = "[[1000, 0.15, 0], [1800, 0.30, 0.18]]"
+    elif tipo == "GIALLO":
+        sequenza = "[[1200, 0.15, 0], [1200, 0.15, 0.25]]"
+    else:
+        sequenza = "[[800, 0.20, 0], [600, 0.20, 0.22], [400, 0.35, 0.44]]"
+
+    js_audio = f"""
+    <script>
+    (function() {{
+        try {{
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            const ctx = new AudioCtx();
+            const notes = {sequenza};
+            notes.forEach(([freq, dur, delay]) => {{
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+                gain.gain.setValueAtTime(0.25, ctx.currentTime + delay);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + dur);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(ctx.currentTime + delay);
+                osc.stop(ctx.currentTime + delay + dur);
+            }});
+        }} catch(e) {{}}
+    }})();
+    </script>
+    """
+    components.html(js_audio, height=0, width=0)
+
 
 # ==============================================================================
 # >>>>>> BLOCK >>> B <<< (SIDEBAR & CREATURES BY PLANET)

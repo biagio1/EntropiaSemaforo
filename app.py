@@ -211,7 +211,7 @@ if c_btn2.button("🟡 Yellow"):
 if c_btn3.button("🔴 Red"):
     attiva_allarme_sonoro("ROSSO")
 # ==============================================================================
-# >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & CSV UPDATER)
+# >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & WEB FALLBACK)
 # ==============================================================================
 
 import cloudscraper
@@ -221,16 +221,14 @@ st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
 @st.cache_data(ttl=15)
 def scarica_da_entropia_nexus():
-    url = "https://api.entropianexus.com"
+    scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
+    
+    # 1. Tentativo tramite API diretta
     try:
-        scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
-        r = scraper.get(url, timeout=12)
-        if r.status_code == 200:
-            testo = r.text.strip()
-            if not testo.startswith("{"):
-                return [], False, f"NoJSON: {testo[:25]}"
+        r = scraper.get("https://entropianexus.com", headers={"Accept": "application/json"}, timeout=10)
+        if r.status_code == 200 and r.text.strip().startswith(("{", "[")):
             data = r.json()
-            lista_globals = data.get("globals", [])
+            lista_globals = data.get("globals", []) if isinstance(data, dict) else data
             records = []
             for g in lista_globals:
                 if str(g.get("type", "")).lower() != "hunting":
@@ -249,8 +247,40 @@ def scarica_da_entropia_nexus():
                             "Mob": target_mob.title(),
                             "PED": int(float(ped_val))
                         })
-            return records, True, f"OK ({len(lista_globals)} raw)"
-        return [], False, f"HTTP {r.status_code}"
+            if records:
+                return records, True, f"API OK ({len(records)} hunting)"
+    except Exception:
+        pass
+
+    # 2. Fallback: lettura diretta dalla pagina pubblica /globals
+    try:
+        r_web = scraper.get("https://entropianexus.com", timeout=10)
+        if r_web.status_code == 200:
+            testo_pulito = re.sub(r"<[^>]+>", " ", r_web.text)
+            testo_pulito = re.sub(r"\s+", " ", testo_pulito)
+            matches = re.findall(
+                r"Hunting\s+([A-Za-z0-9\s\'\-\.]{2,45}?)\s+([A-Z][A-Za-z0-9\s\-]{2,35}?)\s+(\d+(?:\.\d+)?)\s*PED\s+(just now|\d+m ago|\d+h ago)",
+                testo_pulito
+            )
+            records_web = []
+            adesso = ora_italia_now()
+            for player_txt, mob_txt, ped_txt, ago_txt in matches:
+                minuti_fa = 0
+                if "m ago" in ago_txt:
+                    minuti_fa = int(re.search(r"\d+", ago_txt).group())
+                elif "h ago" in ago_txt:
+                    minuti_fa = int(re.search(r"\d+", ago_txt).group()) * 60
+                ts_calc = (adesso - timedelta(minutes=minuti_fa)).replace(second=0, microsecond=0)
+                records_web.append({
+                    "Timestamp": ts_calc,
+                    "Player": player_txt.strip() or "Unknown",
+                    "Mob": mob_txt.strip().title(),
+                    "PED": int(float(ped_txt))
+                })
+            if records_web:
+                return records_web, True, f"Web OK ({len(records_web)} hunting)"
+            return [], False, "0 match su pagina"
+        return [], False, f"HTTP {r_web.status_code}"
     except Exception as e:
         return [], False, str(e)[:40]
 

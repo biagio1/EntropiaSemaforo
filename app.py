@@ -845,5 +845,16 @@ with st.expander("📋 View last 10 Globals/HoFs recorded for this mob"):
     else:
         st.info("No Globals found yet for this mob.")
 
-time.sleep(10)
-st.rerun()
+# Aggiornamento automatico pulito ogni 30 secondi (senza sovrapposizioni)
+if "auto_refresh" not in st.session_state:
+    st.session_state.auto_refresh = True
+
+col_r1, col_r2 = st.sidebar.columns(2)
+st.session_state.auto_refresh = col_r1.checkbox("🔄 Auto-Refresh", value=st.session_state.auto_refresh)
+if col_r2.button("⚡ Refresh Now"):
+    st.rerun()
+
+if st.session_state.auto_refresh:
+    time.sleep(30)
+    st.rerun()
+

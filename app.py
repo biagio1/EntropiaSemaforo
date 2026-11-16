@@ -302,6 +302,13 @@ def scarica_da_entropia_nexus():
         return [], False, f"HTTP {r_web.status_code}"
     except Exception as e:
         return [], False, str(e)[:40]
+        df_globale, nexus_ok, stato_nexus = aggiorna_database_live()
+
+if nexus_ok:
+    st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
+else:
+    st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
 
 
 

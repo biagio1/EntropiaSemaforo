@@ -220,7 +220,7 @@ import json
 st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=25)
 def scarica_da_entropia_nexus(lista_mob_noti):
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
@@ -228,7 +228,9 @@ def scarica_da_entropia_nexus(lista_mob_noti):
     
     dominio_base = "https://entropianexus.com"
     url_pagina_globals = dominio_base + "/globals"
-    
+    adesso = ora_italia_now()
+    mobs_ordinati = sorted(lista_mob_noti, key=len, reverse=True)
+
     try:
         scraper.get(dominio_base, timeout=8)
     except Exception:
@@ -236,26 +238,23 @@ def scarica_da_entropia_nexus(lista_mob_noti):
 
     api_urls = [
         dominio_base + "/api/globals?limit=100",
+        dominio_base + "/api/globals",
         dominio_base + "/globals?limit=100"
     ]
     
     headers_api = {
-        "Accept": "*/*",
-        "Accept-Encoding": "gzip, deflate",
-        "Referer": dominio_base + "/",
-        "Origin": dominio_base,
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin"
+        "Accept": "application/json, text/plain, */*",
+        "Referer": dominio_base + "/globals",
+        "Origin": dominio_base
     }
     
-    # Passaggio 1: Tentativo API JSON
+    # 1. Tentativo API JSON diretta
     for url in api_urls:
         try:
             r = scraper.get(url, headers=headers_api, timeout=10)
             if r.status_code == 200 and r.text.strip().startswith(("{", "[")):
                 data = r.json()
-                lista_globals = data.get("globals", []) if isinstance(data, dict) else data
+                lista_globals = data.get("globals", data.get("data", [])) if isinstance(data, dict) else data
                 records = []
                 for g in lista_globals:
                     if not isinstance(g, dict):
@@ -288,12 +287,16 @@ def scarica_da_entropia_nexus(lista_mob_noti):
         except Exception:
             continue
 
-    # Passaggio 2: Fallback HTML dalla pagina /globals o homepage
+    # 2. Parsing automatico dalla pagina /globals e dalla Homepage
     for web_url in [url_pagina_globals, dominio_base]:
         try:
-            r_web = scraper.get(web_url, headers={"Accept-Encoding": "gzip, deflate"}, timeout=10)
+            r_web = scraper.get(web_url, timeout=12)
             if r_web.status_code == 200:
-                testo = re.sub(r"<[^>]+>", " ", r_web.text)
+                html_raw = r_web.text
+                records_web = []
+
+                # Tentativo A: Estrazione da blocchi HTML puliti (gestisce anche "HoF" e "just now")
+                testo = re.sub(r"<[^>]+>", " ", html_raw)
                 testo = re.sub(r"\s+", " ", testo)
                 
                 matches = re.findall(
@@ -303,10 +306,6 @@ def scarica_da_entropia_nexus(lista_mob_noti):
                 )
                 
                 if matches:
-                    records_web = []
-                    adesso = ora_italia_now()
-                    mobs_ordinati = sorted(lista_mob_noti, key=len, reverse=True)
-                    
                     for blocco_testo, ped_txt, ago_txt in matches:
                         blocco_pulito = blocco_testo.strip()
                         if len(blocco_pulito) > 95:
@@ -341,6 +340,22 @@ def scarica_da_entropia_nexus(lista_mob_noti):
                     
                     if records_web:
                         return records_web, True, f"Web OK ({len(records_web)} hunting)"
+
+                # Tentativo B: Estrazione da payload JSON Next.js incorporato nella pagina
+                json_matches = re.findall(
+                    r'"(?:target|mob|creature)"\s*:\s*"([^"]+)"[^}]*?"(?:value|ped|amount)"\s*:\s*(\d+(?:\.\d+)?)',
+                    html_raw
+                )
+                if json_matches:
+                    for mob_raw, ped_raw in json_matches:
+                        records_web.append({
+                            "Timestamp": adesso.replace(second=0, microsecond=0),
+                            "Player": "Unknown",
+                            "Mob": mob_raw.strip().title(),
+                            "PED": int(float(ped_raw))
+                        })
+                    if records_web:
+                        return records_web, True, f"NextJS OK ({len(records_web)} hunting)"
         except Exception:
             continue
 
@@ -392,6 +407,9 @@ if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
+st.sidebar.markdown("---")
+
 
 # ==============================================================================
 # >>>>>> BLOCK >>> D <<< (CHAT.LOG UPLOADER, INTRADAY SYNC & CSV EXPORT)

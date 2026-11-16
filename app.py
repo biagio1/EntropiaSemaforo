@@ -221,74 +221,123 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
 @st.cache_data(ttl=15)
-def scarica_da_entropia_nexus():
+def scarica_da_entropia_nexus(lista_mob_noti):
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
     )
     
-    # Passaggio 1: Visita la pagina per inizializzare i cookie di sessione Cloudflare
-    try:
-        scraper.get("https://entropianexus.com", timeout=10)
-    except Exception:
-        pass
-
-    url = "https://entropianexus.com"
-    headers = {
+    # Costruiamo gli URL unendo dominio e percorso per evitare tagli nel copia-incolla
+    dominio_base = "https://entropianexus.com"
+    dominio_api = "https://api.entropianexus.com"
+    
+    url_pagina_globals = dominio_base + "/globals"
+    api_urls = [
+        dominio_base + "/api/globals?limit=100",
+        dominio_api + "/globals?limit=100"
+    ]
+    
+    headers_api = {
         "Accept": "application/json, text/plain, */*",
         "Accept-Encoding": "gzip, deflate",
-        "Referer": "https://entropianexus.com",
-        "Origin": "https://entropianexus.com"
+        "Referer": url_pagina_globals,
+        "Origin": dominio_base
     }
     
-    try:
-        r = scraper.get(url, headers=headers, timeout=10)
-        if r.status_code == 200:
-            testo = r.text.strip()
-            if not testo:
-                return [], False, "Risposta vuota (char 0) da API"
-            if not testo.startswith(("{", "[")):
-                return [], False, f"Non-JSON: {testo[:30]}"
-                
-            data = r.json()
-            lista_globals = data.get("globals", []) if isinstance(data, dict) else data
-            
-            records = []
-            for g in lista_globals:
-                if not isinstance(g, dict):
-                    continue
-                tipo = str(g.get("type") or g.get("category") or g.get("profession") or "").lower()
-                if tipo and tipo != "hunting":
-                    continue
-                
-                raw_target = g.get("target") or g.get("mob") or g.get("creature") or g.get("name") or ""
-                target_name = str(raw_target.get("name") if isinstance(raw_target, dict) else raw_target).strip()
+    # Passaggio 1: Tentativo API JSON
+    for url in api_urls:
+        try:
+            r = scraper.get(url, headers=headers_api, timeout=10)
+            if r.status_code == 200 and r.text.strip().startswith(("{", "[")):
+                data = r.json()
+                lista_globals = data.get("globals", []) if isinstance(data, dict) else data
+                records = []
+                for g in lista_globals:
+                    if not isinstance(g, dict):
+                        continue
+                    tipo = str(g.get("type") or g.get("category") or g.get("profession") or "").lower()
+                    if tipo and tipo != "hunting":
+                        continue
+                    
+                    raw_target = g.get("target") or g.get("mob") or g.get("creature") or g.get("name") or ""
+                    target_name = str(raw_target.get("name") if isinstance(raw_target, dict) else raw_target).strip()
 
-                raw_player = g.get("player") or g.get("avatar") or g.get("user") or "Unknown"
-                player_nome = str(raw_player.get("name") if isinstance(raw_player, dict) else raw_player).strip()
+                    raw_player = g.get("player") or g.get("avatar") or g.get("user") or "Unknown"
+                    player_nome = str(raw_player.get("name") if isinstance(raw_player, dict) else raw_player).strip()
 
-                ped_val = g.get("value") or g.get("ped") or g.get("amount")
-                ts_raw = g.get("timestamp") or g.get("createdAt") or g.get("created_at") or g.get("date")
+                    ped_val = g.get("value") or g.get("ped") or g.get("amount")
+                    ts_raw = g.get("timestamp") or g.get("createdAt") or g.get("created_at") or g.get("date")
+                    
+                    if target_name and ped_val is not None and ts_raw:
+                        ts_utc = pd.to_datetime(ts_raw, utc=True, errors="coerce")
+                        if pd.notna(ts_utc):
+                            ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None)
+                            records.append({
+                                "Timestamp": ts_it,
+                                "Player": player_nome if player_nome else "Unknown",
+                                "Mob": target_name.title(),
+                                "PED": int(float(ped_val))
+                            })
+                if records:
+                    return records, True, f"API OK ({len(records)} hunting)"
+        except Exception:
+            continue
+
+    # Passaggio 2: Fallback HTML dalla pagina /globals o homepage
+    for web_url in [url_pagina_globals, dominio_base]:
+        try:
+            r_web = scraper.get(web_url, headers={"Accept-Encoding": "gzip, deflate"}, timeout=10)
+            if r_web.status_code == 200:
+                testo = re.sub(r"<[^>]+>", " ", r_web.text)
+                testo = re.sub(r"\s+", " ", testo)
                 
-                if target_name and ped_val is not None and ts_raw:
-                    ts_utc = pd.to_datetime(ts_raw, utc=True, errors="coerce")
-                    if pd.notna(ts_utc):
-                        ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None)
-                        records.append({
-                            "Timestamp": ts_it,
-                            "Player": player_nome if player_nome else "Unknown",
-                            "Mob": target_name.title(),
-                            "PED": int(float(ped_val))
+                matches = re.findall(
+                    r"Hunting\s+(.+?)\s+(\d+(?:\.\d+)?)\s*PED\s+(just now|\d+\s*(?:s|m|h)\s*ago)",
+                    testo
+                )
+                
+                if matches:
+                    records_web = []
+                    adesso = ora_italia_now()
+                    mobs_ordinati = sorted(lista_mob_noti, key=len, reverse=True)
+                    
+                    for blocco_testo, ped_txt, ago_txt in matches:
+                        blocco_pulito = blocco_testo.strip()
+                        if len(blocco_pulito) > 90:
+                            continue
+                        
+                        minuti_fa = 0
+                        if "m" in ago_txt:
+                            m_num = re.search(r"\d+", ago_txt)
+                            minuti_fa = int(m_num.group()) if m_num else 0
+                        elif "h" in ago_txt:
+                            h_num = re.search(r"\d+", ago_txt)
+                            minuti_fa = int(h_num.group()) * 60 if h_num else 0
+                            
+                        ts_calc = (adesso - timedelta(minutes=minuti_fa)).replace(second=0, microsecond=0)
+                        
+                        player_trovato = "Unknown"
+                        mob_trovato = blocco_pulito.title()
+                        
+                        for m_noto in mobs_ordinati:
+                            idx = blocco_pulito.lower().find(m_noto.lower())
+                            if idx != -1:
+                                player_trovato = blocco_pulito[:idx].strip() or "Unknown"
+                                mob_trovato = blocco_pulito[idx:].strip().title()
+                                break
+                        
+                        records_web.append({
+                            "Timestamp": ts_calc,
+                            "Player": player_trovato,
+                            "Mob": mob_trovato,
+                            "PED": int(float(ped_txt))
                         })
-            if records:
-                return records, True, f"API OK ({len(records)} hunting)"
-            elif isinstance(lista_globals, list) and len(lista_globals) > 0:
-                chiavi = list(lista_globals[0].keys())[:5]
-                return [], False, f"Campi item: {chiavi}"
-            else:
-                return [], False, "Lista globals vuota"
-        return [], False, f"HTTP {r.status_code}"
-    except Exception as e:
-        return [], False, str(e)[:40]
+                    
+                    if records_web:
+                        return records_web, True, f"Web OK ({len(records_web)} hunting)"
+        except Exception:
+            continue
+
+    return [], False, "Cloudflare block su IP cloud"
 
 def aggiorna_database_live():
     if os.path.exists(PATH_DATABASE_CSV) and os.path.getsize(PATH_DATABASE_CSV) > 0:
@@ -302,7 +351,8 @@ def aggiorna_database_live():
     else:
         df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
 
-    nuovi_record, api_ok, stato_msg = scarica_da_entropia_nexus()
+    tutti_mobs_noti = [m for mobs in MOBS_PER_PIANETA.values() for m in mobs]
+    nuovi_record, api_ok, stato_msg = scarica_da_entropia_nexus(tutti_mobs_noti)
 
     if nuovi_record:
         df_nuovi = pd.DataFrame(nuovi_record)
@@ -335,6 +385,7 @@ if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
 
 
 

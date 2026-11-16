@@ -220,30 +220,38 @@ import json
 st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=10)
 def scarica_da_entropia_nexus(lista_mob_noti):
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
     )
     
-    # Costruiamo gli URL unendo dominio e percorso per evitare tagli nel copia-incolla
     dominio_base = "https://entropianexus.com"
-    dominio_api = "https://api.entropianexus.com"
-    
+    dominio_api = "https://entropianexus.com"
     url_pagina_globals = dominio_base + "/globals"
+    
+    # Inizializza cookie di sessione visitando il sito
+    try:
+        scraper.get(dominio_base, timeout=8)
+    except Exception:
+        pass
+
     api_urls = [
         dominio_base + "/api/globals?limit=100",
         dominio_api + "/globals?limit=100"
     ]
     
     headers_api = {
-        "Accept": "application/json, text/plain, */*",
+        "Accept": "*/*",
         "Accept-Encoding": "gzip, deflate",
-        "Referer": url_pagina_globals,
-        "Origin": dominio_base
+        "Referer": dominio_base + "/",
+        "Origin": dominio_base,
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin"
     }
     
-    # Passaggio 1: Tentativo API JSON
+    # Passaggio 1: Tentativo API JSON (100 globals, inclusi mini-global >= 5 PED)
     for url in api_urls:
         try:
             r = scraper.get(url, headers=headers_api, timeout=10)
@@ -385,6 +393,9 @@ if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
+st.sidebar.caption(f"🕒 IT Time: **{ora_italia_now().strftime('%H:%M:%S')}** (Europe/Rome)")
+
 
 
 

@@ -436,7 +436,6 @@ st.sidebar.subheader("📂 Sync from chat.log (Intraday)")
 uploaded_chat_log = st.sidebar.file_uploader("Upload Entropia chat.log:", type=["log", "txt"])
 
 if uploaded_chat_log is not None:
-if uploaded_chat_log is not None:
     df_log = analizza_chat_log_cache(uploaded_chat_log.getvalue())
     if len(df_log) > 0:
         if "ultimo_log_unito" not in st.session_state or st.session_state.ultimo_log_unito != uploaded_chat_log.name:

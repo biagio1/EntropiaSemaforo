@@ -997,11 +997,12 @@ if st.session_state.auto_refresh:
                     btn.click();
                 }
             });
-        }, 30000);
+        }, 90000);
         </script>
         """,
         height=0,
         width=0
     )
+
 
 

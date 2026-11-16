@@ -226,76 +226,56 @@ def scarica_da_entropia_nexus():
         browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
     )
     
-    # Endpoint reali dell'API pubblica di Entropia Nexus
-    api_urls = [
-        "https://entropianexus.com",
-        "https://entropianexus.com",
-        "https://entropianexus.com"
-    ]
+    url = "https://entropianexus.com"
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://entropianexus.com",
+        "Origin": "https://entropianexus.com"
+    }
     
-    ultimo_errore = "Nessuna risposta API"
-    
-    for url in api_urls:
-        try:
-            r = scraper.get(url, headers={"Accept": "application/json"}, timeout=10)
-            if r.status_code == 200 and r.text.strip().startswith(("{", "[")):
-                data = r.json()
-                if isinstance(data, list):
-                    lista_globals = data
-                elif isinstance(data, dict):
-                    lista_globals = (
-                        data.get("globals")
-                        or data.get("data")
-                        or data.get("items")
-                        or data.get("results")
-                        or []
-                    )
-                else:
-                    lista_globals = []
+    try:
+        r = scraper.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            lista_globals = data.get("globals", []) if isinstance(data, dict) else data
+            
+            records = []
+            for g in lista_globals:
+                if not isinstance(g, dict):
+                    continue
+                tipo = str(g.get("type") or g.get("category") or g.get("profession") or "").lower()
+                if tipo and tipo != "hunting":
+                    continue
+                
+                raw_target = g.get("target") or g.get("mob") or g.get("creature") or g.get("name") or ""
+                target_name = str(raw_target.get("name") if isinstance(raw_target, dict) else raw_target).strip()
 
-                records = []
-                for g in lista_globals:
-                    if not isinstance(g, dict):
-                        continue
-                    tipo = str(g.get("type") or g.get("category") or g.get("profession") or "").lower()
-                    if tipo and tipo != "hunting":
-                        continue
-                    
-                    # Gestisce sia stringhe che dizionari annidati per target e player
-                    raw_target = g.get("target") or g.get("mob") or g.get("creature") or g.get("name") or ""
-                    if isinstance(raw_target, dict):
-                        target_name = str(raw_target.get("name") or "").strip()
-                    else:
-                        target_name = str(raw_target).strip()
+                raw_player = g.get("player") or g.get("avatar") or g.get("user") or "Unknown"
+                player_nome = str(raw_player.get("name") if isinstance(raw_player, dict) else raw_player).strip()
 
-                    raw_player = g.get("player") or g.get("avatar") or g.get("user") or "Unknown"
-                    if isinstance(raw_player, dict):
-                        player_nome = str(raw_player.get("name") or "Unknown").strip()
-                    else:
-                        player_nome = str(raw_player).strip()
-
-                    ped_val = g.get("value") or g.get("ped") or g.get("amount")
-                    ts_raw = g.get("timestamp") or g.get("createdAt") or g.get("created_at") or g.get("date")
-                    
-                    if target_name and ped_val is not None and ts_raw:
-                        ts_utc = pd.to_datetime(ts_raw, utc=True, errors="coerce")
-                        if pd.notna(ts_utc):
-                            ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None)
-                            records.append({
-                                "Timestamp": ts_it,
-                                "Player": player_nome if player_nome else "Unknown",
-                                "Mob": target_name.title(),
-                                "PED": int(float(ped_val))
-                            })
-                if records:
-                    return records, True, f"API OK ({len(records)} hunting)"
+                ped_val = g.get("value") or g.get("ped") or g.get("amount")
+                ts_raw = g.get("timestamp") or g.get("createdAt") or g.get("created_at") or g.get("date")
+                
+                if target_name and ped_val is not None and ts_raw:
+                    ts_utc = pd.to_datetime(ts_raw, utc=True, errors="coerce")
+                    if pd.notna(ts_utc):
+                        ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None)
+                        records.append({
+                            "Timestamp": ts_it,
+                            "Player": player_nome if player_nome else "Unknown",
+                            "Mob": target_name.title(),
+                            "PED": int(float(ped_val))
+                        })
+            if records:
+                return records, True, f"API OK ({len(records)} hunting)"
+            elif lista_globals:
+                chiavi = list(lista_globals[0].keys())[:5]
+                return [], False, f"Chiavi JSON: {chiavi}"
             else:
-                ultimo_errore = f"HTTP {r.status_code}"
-        except Exception as e:
-            ultimo_errore = str(e)[:35]
-            continue
-
-    return [], False, ultimo_errore
+                return [], False, "Lista globals vuota"
+        return [], False, f"HTTP {r.status_code}"
+    except Exception as e:
+        return [], False, str(e)[:40]
 
 def aggiorna_database_live():
     if os.path.exists(PATH_DATABASE_CSV) and os.path.getsize(PATH_DATABASE_CSV) > 0:
@@ -342,6 +322,7 @@ if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
 
 # ==============================================================================
 # >>>>>> BLOCK >>> D <<< (PLANET MOB DATABASE PART 1: A - K)

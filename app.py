@@ -619,7 +619,7 @@ fig_oggi.update_layout(
 )
 st.plotly_chart(fig_oggi, use_container_width=True)
 # ==============================================================================
-# >>>>>> BLOCK >>> H <<< (SECTION 2: WEEKLY TREND, 7-DAY CHART & PLAYER TABLE)
+# >>>>>> BLOCK >>> H <<< (SECTION 2: WEEKLY TREND, BEST HOURS & PLAYER TABLE)
 # ==============================================================================
 
 st.markdown("---")
@@ -737,6 +737,78 @@ fig_sett.update_layout(
     height=360
 )
 st.plotly_chart(fig_sett, use_container_width=True)
+
+# --- SECTION 3: BEST HUNTING TIME WINDOW (HISTORICAL PEAK HOURS) ---
+st.markdown("---")
+st.subheader(f"🕒 3. Best Hunting Time Windows for {mob_selezionato} ({grado_mob})")
+
+if len(df_mob) >= 3:
+    df_mob_ore = df_mob.copy()
+    df_mob_ore['Ora_Storica'] = pd.to_datetime(df_mob_ore['Timestamp'], errors='coerce').dt.hour
+    stats_orarie = df_mob_ore.groupby('Ora_Storica').agg(
+        Conteggio=('PED', 'count'),
+        Totale_PED=('PED', 'sum'),
+        Media_PED=('PED', 'mean')
+    ).reindex(range(24), fill_value=0).reset_index()
+
+    top_3_ore = stats_orarie.sort_values(['Conteggio', 'Totale_PED'], ascending=[False, False]).head(3)
+    ora_migliore = int(top_3_ore.iloc[0]['Ora_Storica'])
+    ora_fine_migliore = (ora_migliore + 2) % 24
+    glob_ora_migliore = int(top_3_ore.iloc[0]['Conteggio'])
+    media_ora_migliore = float(top_3_ore.iloc[0]['Media_PED'])
+
+    # Calcolo finestra mobile di 2 ore consecutiva con piu Global
+    miglior_blocco_inizio = 0
+    max_glob_blocco = -1
+    for h in range(24):
+        h_next = (h + 1) % 24
+        somma_2h = int(stats_orarie.loc[h, 'Conteggio'] + stats_orarie.loc[h_next, 'Conteggio'])
+        if somma_2h > max_glob_blocco:
+            max_glob_blocco = somma_2h
+            miglior_blocco_inizio = h
+    miglior_blocco_fine = (miglior_blocco_inizio + 2) % 24
+
+    b1, b2, b3 = st.columns(3)
+    with b1:
+        st.success(
+            f"🏆 **Prime Hunting Window (2h):**\n\n"
+            f"**{miglior_blocco_inizio:02d}:00 — {miglior_blocco_fine:02d}:00** (IT Time)\n\n"
+            f"Peak concentration: **{max_glob_blocco} Globals** recorded in this 2-hour slot."
+        )
+    with b2:
+        st.info(
+            f"⏰ **Single Peak Hour:**\n\n"
+            f"**{ora_migliore:02d}:00 — {(ora_migliore + 1) % 24:02d}:00**\n\n"
+            f"**{glob_ora_migliore} Globals** (Avg payout: **{media_ora_migliore:.0f} PED**)"
+        )
+    with b3:
+        elenco_top3 = " | ".join([f"**{int(r['Ora_Storica']):02d}:00** ({int(r['Conteggio'])}x)" for _, r in top_3_ore.iterrows() if r['Conteggio'] > 0])
+        st.warning(
+            f"🎯 **Top 3 Active Hours & Zone:**\n\n"
+            f"{elenco_top3}\n\n"
+            f"Area: **{coord_mob}**"
+        )
+
+    fig_ore_storico = go.Figure()
+    fig_ore_storico.add_trace(go.Bar(
+        x=[f"{h:02d}:00" for h in stats_orarie['Ora_Storica']],
+        y=stats_orarie['Conteggio'],
+        name='Historical Globals (#)',
+        marker_color='#ffea00',
+        text=stats_orarie['Conteggio'].apply(lambda v: f"{v}" if v > 0 else ""),
+        textposition='auto'
+    ))
+    fig_ore_storico.add_vline(x=ora_attuale.hour, line_dash="dash", line_color="#00e676", annotation_text="Now")
+    fig_ore_storico.update_layout(
+        title=f"All-Time Hourly Distribution for {mob_selezionato} (Best Time to Hunt)",
+        xaxis=dict(title="Hour of Day (Italian Time 00:00 - 23:00)", showgrid=False),
+        yaxis=dict(title="Historical Globals Count", showgrid=True, gridcolor="#333", dtick=1),
+        margin=dict(l=20, r=20, t=45, b=20),
+        height=290
+    )
+    st.plotly_chart(fig_ore_storico, use_container_width=True)
+else:
+    st.info(f"Not enough historical data yet for {mob_selezionato} to calculate peak hunting hours.")
 
 with st.expander("📋 View last 10 Globals/HoFs recorded for this mob"):
     if len(df_mob) > 0:

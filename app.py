@@ -295,7 +295,6 @@ def scarica_da_entropia_nexus(lista_mob_noti):
                 html_raw = r_web.text
                 records_web = []
 
-                # Tentativo A: Estrazione da blocchi HTML puliti (gestisce anche "HoF" e "just now")
                 testo = re.sub(r"<[^>]+>", " ", html_raw)
                 testo = re.sub(r"\s+", " ", testo)
                 
@@ -341,7 +340,6 @@ def scarica_da_entropia_nexus(lista_mob_noti):
                     if records_web:
                         return records_web, True, f"Web OK ({len(records_web)} hunting)"
 
-                # Tentativo B: Estrazione da payload JSON Next.js incorporato nella pagina
                 json_matches = re.findall(
                     r'"(?:target|mob|creature)"\s*:\s*"([^"]+)"[^}]*?"(?:value|ped|amount)"\s*:\s*(\d+(?:\.\d+)?)',
                     html_raw
@@ -407,6 +405,48 @@ if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
+@st.cache_data(show_spinner=False)
+def analizza_chat_log_cache(file_bytes):
+    try:
+        testo_log = file_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        testo_log = file_bytes.decode("latin-1", errors="ignore")
+
+    pattern_chat = re.compile(
+        r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+\[Globals\]\s+\[\]\s+(.+?)\s+killed a creature\s+\((.+?)\)\s+with a value of\s+(\d+)\s+PED",
+        re.IGNORECASE
+    )
+    trovati_log = pattern_chat.findall(testo_log)
+    nuovi_log = []
+    for ts_s, pl_s, mob_s, ped_s in trovati_log:
+        ts_dt = pd.to_datetime(ts_s, errors="coerce")
+        if pd.notna(ts_dt):
+            ts_it = ts_dt.tz_localize("UTC").tz_convert(TZ_ITALIA).tz_localize(None)
+            nuovi_log.append({
+                "Timestamp": ts_it,
+                "Player": pl_s.strip(),
+                "Mob": mob_s.strip().title(),
+                "PED": int(ped_s)
+            })
+    return pd.DataFrame(nuovi_log) if nuovi_log else pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📂 Sync from chat.log (Intraday)")
+uploaded_chat_log = st.sidebar.file_uploader("Upload Entropia chat.log:", type=["log", "txt"])
+
+if uploaded_chat_log is not None:
+if uploaded_chat_log is not None:
+    df_log = analizza_chat_log_cache(uploaded_chat_log.getvalue())
+    if len(df_log) > 0:
+        if "ultimo_log_unito" not in st.session_state or st.session_state.ultimo_log_unito != uploaded_chat_log.name:
+            df_globale = pd.concat([df_globale, df_log], ignore_index=True)
+            df_globale = df_globale.drop_duplicates(subset=["Timestamp", "Player", "Mob", "PED"]).sort_values("Timestamp")
+            df_globale.to_csv(PATH_DATABASE_CSV, index=False)
+            st.session_state.ultimo_log_unito = uploaded_chat_log.name
+        st.sidebar.success(f"✅ {len(df_log)} Globals synced from chat.log!")
+    else:
+        st.sidebar.warning("⚠️ No hunting globals found in chat.log.")
 
 st.sidebar.markdown("---")
 

@@ -104,7 +104,6 @@ def attiva_allarme_sonoro(tipo):
     """
     components.html(js_audio, height=0, width=0)
 
-
 # ==============================================================================
 # >>>>>> BLOCK >>> B <<< (SIDEBAR & CREATURES BY PLANET)
 # ==============================================================================
@@ -210,8 +209,9 @@ if c_btn2.button("🟡 Yellow"):
     attiva_allarme_sonoro("GIALLO")
 if c_btn3.button("🔴 Red"):
     attiva_allarme_sonoro("ROSSO")
+    
 # ==============================================================================
-# >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & NEXT.JS DATA FIX)
+# >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & DATA PARSER)
 # ==============================================================================
 
 import cloudscraper
@@ -226,91 +226,122 @@ def scarica_da_entropia_nexus():
         browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
     )
     
-    # 1. Tentativo tramite gli endpoint API reali di Entropia Nexus
+    # Endpoint reali dell'API pubblica di Entropia Nexus
     api_urls = [
         "https://entropianexus.com",
         "https://entropianexus.com",
         "https://entropianexus.com"
     ]
     
+    ultimo_errore = "Nessuna risposta API"
+    
     for url in api_urls:
         try:
             r = scraper.get(url, headers={"Accept": "application/json"}, timeout=10)
             if r.status_code == 200 and r.text.strip().startswith(("{", "[")):
                 data = r.json()
-                # Gestisce sia liste dirette che oggetti annidati (es. {"data": [...]})
                 if isinstance(data, list):
                     lista_globals = data
                 elif isinstance(data, dict):
-                    lista_globals = data.get("globals") or data.get("data") or data.get("items") or []
+                    lista_globals = (
+                        data.get("globals")
+                        or data.get("data")
+                        or data.get("items")
+                        or data.get("results")
+                        or []
+                    )
                 else:
                     lista_globals = []
 
                 records = []
                 for g in lista_globals:
-                    tipo = str(g.get("type") or g.get("category") or "").lower()
+                    if not isinstance(g, dict):
+                        continue
+                    tipo = str(g.get("type") or g.get("category") or g.get("profession") or "").lower()
                     if tipo and tipo != "hunting":
                         continue
                     
-                    # Estrae nome mob pulendo eventuale maturità (es. "Atrox Young" -> "Atrox")
-                    target_raw = str(g.get("target") or g.get("mob") or g.get("creature") or g.get("name") or "").strip()
+                    # Gestisce sia stringhe che dizionari annidati per target e player
+                    raw_target = g.get("target") or g.get("mob") or g.get("creature") or g.get("name") or ""
+                    if isinstance(raw_target, dict):
+                        target_name = str(raw_target.get("name") or "").strip()
+                    else:
+                        target_name = str(raw_target).strip()
+
+                    raw_player = g.get("player") or g.get("avatar") or g.get("user") or "Unknown"
+                    if isinstance(raw_player, dict):
+                        player_nome = str(raw_player.get("name") or "Unknown").strip()
+                    else:
+                        player_nome = str(raw_player).strip()
+
                     ped_val = g.get("value") or g.get("ped") or g.get("amount")
-                    ts_raw = g.get("timestamp") or g.get("createdAt") or g.get("date")
-                    player_nome = str(g.get("player") or g.get("avatar") or g.get("user") or "Unknown").strip()
+                    ts_raw = g.get("timestamp") or g.get("createdAt") or g.get("created_at") or g.get("date")
                     
-                    if target_raw and ped_val is not None and ts_raw:
+                    if target_name and ped_val is not None and ts_raw:
                         ts_utc = pd.to_datetime(ts_raw, utc=True, errors="coerce")
                         if pd.notna(ts_utc):
                             ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None)
                             records.append({
                                 "Timestamp": ts_it,
                                 "Player": player_nome if player_nome else "Unknown",
-                                "Mob": target_raw.title(),
+                                "Mob": target_name.title(),
                                 "PED": int(float(ped_val))
                             })
                 if records:
                     return records, True, f"API OK ({len(records)} hunting)"
-        except Exception:
+            else:
+                ultimo_errore = f"HTTP {r.status_code}"
+        except Exception as e:
+            ultimo_errore = str(e)[:35]
             continue
 
-    # 2. Fallback: lettura dalla pagina /globals (inclusi script JSON Next.js)
-    try:
-        r_web = scraper.get("https://entropianexus.com", timeout=10)
-        if r_web.status_code == 200:
-            # Cerca prima eventuali JSON embedded nel sorgente Next.js
-            json_matches = re.findall(r'\{[^{}]*"value"\s*:\s*\d+[^{}]*"target"\s*:\s*"[^"]+"[^{}]*\}', r_web.text)
-            records_web = []
-            for jm in json_matches:
-                try:
-                    g = json.loads(jm)
-                    if str(g.get("type", "hunting")).lower() == "hunting":
-                        ts_utc = pd.to_datetime(g.get("timestamp"), utc=True, errors="coerce")
-                        ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None) if pd.notna(ts_utc) else ora_italia_now()
-                        records_web.append({
-                            "Timestamp": ts_it,
-                            "Player": str(g.get("player") or "Unknown").strip(),
-                            "Mob": str(g.get("target")).strip().title(),
-                            "PED": int(float(g.get("value")))
-                        })
-                except Exception:
-                    pass
+    return [], False, ultimo_errore
 
-            if records_web:
-                return records_web, True, f"NextJS OK ({len(records_web)} hunting)"
-            
-            return [], False, "Struttura pagina cambiata (0 match)"
-        return [], False, f"HTTP {r_web.status_code}"
-    except Exception as e:
-        return [], False, str(e)[:40]
-        df_globale, nexus_ok, stato_nexus = aggiorna_database_live()
+def aggiorna_database_live():
+    if os.path.exists(PATH_DATABASE_CSV) and os.path.getsize(PATH_DATABASE_CSV) > 0:
+        try:
+            df_storico = pd.read_csv(PATH_DATABASE_CSV)
+            df_storico["Timestamp"] = pd.to_datetime(df_storico["Timestamp"], errors="coerce")
+            if "Player" not in df_storico.columns:
+                df_storico["Player"] = "Unknown"
+        except Exception:
+            df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
+    else:
+        df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
+
+    nuovi_record, api_ok, stato_msg = scarica_da_entropia_nexus()
+
+    if nuovi_record:
+        df_nuovi = pd.DataFrame(nuovi_record)
+        df_totale = pd.concat([df_storico, df_nuovi], ignore_index=True)
+    else:
+        df_totale = df_storico.copy()
+
+    if len(df_totale) > 0:
+        df_totale = df_totale.dropna(subset=["Timestamp", "Mob", "PED"])
+        df_totale["Mob"] = df_totale["Mob"].astype(str).str.strip().str.title()
+        df_totale["Player"] = df_totale["Player"].fillna("Unknown").astype(str).str.strip()
+        df_totale["Ha_Player"] = (df_totale["Player"] != "Unknown").astype(int)
+
+        df_totale = df_totale.sort_values(
+            ["Player", "Mob", "PED", "Timestamp", "Ha_Player"],
+            ascending=[True, True, True, True, False]
+        )
+
+        diff_sec = df_totale.groupby(["Player", "Mob", "PED"])["Timestamp"].diff().dt.total_seconds()
+        df_totale = df_totale[diff_sec.isna() | (diff_sec > 300)]
+
+        df_totale = df_totale.drop(columns=["Ha_Player"]).sort_values("Timestamp", ascending=True)
+        df_totale.to_csv(PATH_DATABASE_CSV, index=False)
+
+    return df_totale, api_ok, stato_msg
+
+df_globale, nexus_ok, stato_nexus = aggiorna_database_live()
 
 if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
-
-
-
 
 # ==============================================================================
 # >>>>>> BLOCK >>> D <<< (PLANET MOB DATABASE PART 1: A - K)
@@ -361,6 +392,7 @@ INFO_MOB = {
     "Kadra": ("Planet Arkadia", "Lv. 13-20 (Young/Mature)", "18900, 19600 (Relentless North)", "Kadra Hide, Pancreas Oil (115-130% MU)", "/wp [Arkadia, 18900, 19600, 115, Kadra]"),
     "Kamaldon": ("Planet Arkadia", "Lv. 15-22 (Young/Mature)", "17500, 22100 (Arkadia Deep Wilds)", "Kamaldon Hide, Rare Oils (118-135% MU)", "/wp [Arkadia, 17500, 22100, 115, Kamaldon]"),
     "Kerberos": ("Planet Calypso", "Lv. 8-15 (Young/Mature)", "64900, 84500 (Fort Pandora)", "Kerberos Bone, Thyroid Oil (115-130% MU)", "/wp [Calypso, 64900, 84500, 120, Kerberos]"),
+    
 # ==============================================================================
 # >>>>>> BLOCK >>> E <<< (PLANET MOB DATABASE PART 2: K - Z)
 # ==============================================================================
@@ -408,6 +440,7 @@ pianeta_mob, grado_mob, coord_mob, drop_mob, wp_mob = INFO_MOB.get(
     mob_selezionato,
     ("Check EntropiaWiki", "Variable", "Check local spawns", "Shrapnel, Oils, Hides (105-120% MU)", f"/wp [Calypso, 70000, 75000, 110, {mob_selezionato}]")
 )
+
 # ==============================================================================
 # >>>>>> BLOCK >>> F <<< (PREDICTOR CALCULATIONS & SIDEBAR SUMMARY)
 # ==============================================================================
@@ -483,6 +516,7 @@ punteggio_ritardo = min(40, int((minuti_dall_ultimo / max(15.0, media_attesa_min
 punteggio_deficit = min(35, max(0, int((1.0 - (ped_totali_oggi / max(1.0, attesi_entro_questa_ora))) * 35)))
 punteggio_onda = 25 if onda_attiva else (15 if qta_15m == 1 and max_ped_20m < soglia_hof_stop else 0)
 indice_pressione_pool = min(100, max(5, punteggio_ritardo + punteggio_deficit + punteggio_onda))
+
 # ==============================================================================
 # >>>>>> BLOCK >>> G <<< (SECTION 1: LIVE REAL-TIME & DAILY HISTOGRAM)
 # ==============================================================================
@@ -620,6 +654,7 @@ fig_oggi.update_layout(
     height=370
 )
 st.plotly_chart(fig_oggi, use_container_width=True)
+
 # ==============================================================================
 # >>>>>> BLOCK >>> H <<< (SECTION 2: WEEKLY TREND, BEST HOURS & PLAYER TABLE)
 # ==============================================================================

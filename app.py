@@ -220,16 +220,6 @@ import json
 st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
-# ==============================================================================
-# >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & DATA PARSER)
-# ==============================================================================
-
-import cloudscraper
-import json
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
-
 @st.cache_data(ttl=15)
 def scarica_da_entropia_nexus():
     scraper = cloudscraper.create_scraper(
@@ -345,6 +335,7 @@ if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
 
 
 # ==============================================================================

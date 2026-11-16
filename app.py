@@ -845,7 +845,7 @@ with st.expander("📋 View last 10 Globals/HoFs recorded for this mob"):
     else:
         st.info("No Globals found yet for this mob.")
 
-# Aggiornamento automatico pulito ogni 30 secondi (senza sovrapposizioni)
+# Timer leggero lato browser (nessun blocco server e zero effetto ghost)
 if "auto_refresh" not in st.session_state:
     st.session_state.auto_refresh = True
 
@@ -855,6 +855,20 @@ if col_r2.button("⚡ Refresh Now"):
     st.rerun()
 
 if st.session_state.auto_refresh:
-    time.sleep(30)
-    st.rerun()
+    components.html(
+        """
+        <script>
+        setTimeout(function() {
+            window.parent.document.querySelectorAll('button').forEach(btn => {
+                if (btn.innerText.includes('Refresh Now')) {
+                    btn.click();
+                }
+            });
+        }, 30000);
+        </script>
+        """,
+        height=0,
+        width=0
+    )
+
 

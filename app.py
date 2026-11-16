@@ -449,11 +449,13 @@ if uploaded_chat_log is not None:
 
 st.sidebar.markdown("---")
 
-
-
 # ==============================================================================
-# >>>>>> BLOCK >>> E <<< (PLANET MOB DATABASE PART 2: K - Z)
+# >>>>>> BLOCK >>> D <<< (PLANET MOB DATABASE PART 1: A - K)
 # ==============================================================================
+
+INFO_MOB = {
+    "Drill Bot": ("Planet Cyrene", "Lv. 4-9 (Small Robot)", "135400, 76800 (A.R.C. Staging / Robot Area)", "Electronic Comps, Motion Sensors, Kinsite Ore (115-135% MU)", "/wp [Cyrene, 135400, 76800, 110, Drill Bot]"),
+
 
      "Drill Bot": ("Planet Cyrene", "Lv. 4-9 (Small Robot)", "135400, 76800 (A.R.C. Staging / Robot Area)", "Electronic Comps, Motion Sensors, Kinsite Ore (115-135% MU)", "/wp [Cyrene, 135400, 76800, 110, Drill Bot]"),
     "Oratan Prospector": ("Planet Arkadia", "Lv. 8-16 (Young/Mature)", "21500, 19800 (IFN Outposts / Arkadia)", "Oratan Axe, Arkadian Oils, Weapons (115-135% MU)", "/wp [Arkadia, 21500, 19800, 115, Oratan Prospector]"),

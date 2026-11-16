@@ -301,18 +301,31 @@ def aggiorna_database_live():
     if nuovi_record:
         df_nuovi = pd.DataFrame(nuovi_record)
         df_totale = pd.concat([df_storico, df_nuovi], ignore_index=True)
+    else:
+        df_totale = df_storico.copy()
+
+    if len(df_totale) > 0:
         df_totale = df_totale.dropna(subset=["Timestamp", "Mob", "PED"])
         df_totale["Mob"] = df_totale["Mob"].astype(str).str.strip().str.title()
         df_totale["Player"] = df_totale["Player"].fillna("Unknown").astype(str).str.strip()
-        df_totale["Ts_Minuto"] = df_totale["Timestamp"].dt.floor("min")
         df_totale["Ha_Player"] = (df_totale["Player"] != "Unknown").astype(int)
-        df_totale = df_totale.sort_values(["Timestamp", "Ha_Player"], ascending=[True, True])
-        df_totale = df_totale.drop_duplicates(subset=["Ts_Minuto", "Mob", "PED"], keep="last")
-        df_totale = df_totale.drop(columns=["Ts_Minuto", "Ha_Player"]).sort_values("Timestamp", ascending=True)
-        df_totale.to_csv(PATH_DATABASE_CSV, index=False)
-        return df_totale, api_ok, stato_msg
 
-    return df_storico, api_ok, stato_msg
+        # Ordina per Player, Mob, PED e Timestamp per individuare i duplicati ravvicinati
+        df_totale = df_totale.sort_values(
+            ["Player", "Mob", "PED", "Timestamp", "Ha_Player"],
+            ascending=[True, True, True, True, False]
+        )
+
+        # Calcola la differenza in secondi rispetto al record identico precedente
+        diff_sec = df_totale.groupby(["Player", "Mob", "PED"])["Timestamp"].diff().dt.total_seconds()
+
+        # Mantiene solo la prima registrazione e scarta i duplicati entro 300 secondi (5 minuti)
+        df_totale = df_totale[diff_sec.isna() | (diff_sec > 300)]
+
+        df_totale = df_totale.drop(columns=["Ha_Player"]).sort_values("Timestamp", ascending=True)
+        df_totale.to_csv(PATH_DATABASE_CSV, index=False)
+
+    return df_totale, api_ok, stato_msg
 
 df_globale, nexus_ok, stato_nexus = aggiorna_database_live()
 
@@ -320,6 +333,7 @@ if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
 
 
 # ==============================================================================

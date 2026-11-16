@@ -220,15 +220,32 @@ import json
 st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
+# ==============================================================================
+# >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & DATA PARSER)
+# ==============================================================================
+
+import cloudscraper
+import json
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
+
 @st.cache_data(ttl=15)
 def scarica_da_entropia_nexus():
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
     )
     
+    # Passaggio 1: Visita la pagina per inizializzare i cookie di sessione Cloudflare
+    try:
+        scraper.get("https://entropianexus.com", timeout=10)
+    except Exception:
+        pass
+
     url = "https://entropianexus.com"
     headers = {
         "Accept": "application/json, text/plain, */*",
+        "Accept-Encoding": "gzip, deflate",
         "Referer": "https://entropianexus.com",
         "Origin": "https://entropianexus.com"
     }
@@ -236,6 +253,12 @@ def scarica_da_entropia_nexus():
     try:
         r = scraper.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
+            testo = r.text.strip()
+            if not testo:
+                return [], False, "Risposta vuota (char 0) da API"
+            if not testo.startswith(("{", "[")):
+                return [], False, f"Non-JSON: {testo[:30]}"
+                
             data = r.json()
             lista_globals = data.get("globals", []) if isinstance(data, dict) else data
             
@@ -268,9 +291,9 @@ def scarica_da_entropia_nexus():
                         })
             if records:
                 return records, True, f"API OK ({len(records)} hunting)"
-            elif lista_globals:
+            elif isinstance(lista_globals, list) and len(lista_globals) > 0:
                 chiavi = list(lista_globals[0].keys())[:5]
-                return [], False, f"Chiavi JSON: {chiavi}"
+                return [], False, f"Campi item: {chiavi}"
             else:
                 return [], False, "Lista globals vuota"
         return [], False, f"HTTP {r.status_code}"

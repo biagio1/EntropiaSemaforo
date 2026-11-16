@@ -214,22 +214,21 @@ if c_btn3.button("🔴 Red"):
 # >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & CSV UPDATER)
 # ==============================================================================
 
+import cloudscraper
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
-@st.cache_data(ttl=12)
+@st.cache_data(ttl=15)
 def scarica_da_entropia_nexus():
     url = "https://entropianexus.com"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://entropianexus.com",
-        "Origin": "https://entropianexus.com"
-    }
     try:
-        r = requests.get(url, headers=headers, timeout=10)
+        scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
+        r = scraper.get(url, timeout=12)
         if r.status_code == 200:
+            testo = r.text.strip()
+            if not testo.startswith("{"):
+                return [], False, f"NoJSON: {testo[:25]}"
             data = r.json()
             lista_globals = data.get("globals", [])
             records = []
@@ -291,6 +290,7 @@ if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
 
 # ==============================================================================
 # >>>>>> BLOCK >>> D <<< (PLANET MOB DATABASE PART 1: A - K)

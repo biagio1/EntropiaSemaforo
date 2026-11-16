@@ -221,12 +221,14 @@ st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 def scarica_da_entropia_nexus():
     url = "https://entropianexus.com"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-        "Referer": "https://entropianexus.com"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://entropianexus.com",
+        "Origin": "https://entropianexus.com"
     }
     try:
-        r = requests.get(url, headers=headers, timeout=8)
+        r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.json()
             lista_globals = data.get("globals", [])
@@ -248,10 +250,10 @@ def scarica_da_entropia_nexus():
                             "Mob": target_mob.title(),
                             "PED": int(float(ped_val))
                         })
-            return records, True
-    except Exception:
-        pass
-    return [], False
+            return records, True, f"OK ({len(lista_globals)} raw)"
+        return [], False, f"HTTP {r.status_code}"
+    except Exception as e:
+        return [], False, str(e)[:40]
 
 def aggiorna_database_live():
     if os.path.exists(PATH_DATABASE_CSV) and os.path.getsize(PATH_DATABASE_CSV) > 0:
@@ -265,7 +267,7 @@ def aggiorna_database_live():
     else:
         df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
 
-    nuovi_record, api_ok = scarica_da_entropia_nexus()
+    nuovi_record, api_ok, stato_msg = scarica_da_entropia_nexus()
 
     if nuovi_record:
         df_nuovi = pd.DataFrame(nuovi_record)
@@ -279,16 +281,16 @@ def aggiorna_database_live():
         df_totale = df_totale.drop_duplicates(subset=["Ts_Minuto", "Mob", "PED"], keep="last")
         df_totale = df_totale.drop(columns=["Ts_Minuto", "Ha_Player"]).sort_values("Timestamp", ascending=True)
         df_totale.to_csv(PATH_DATABASE_CSV, index=False)
-        return df_totale, api_ok, len(nuovi_record)
+        return df_totale, api_ok, stato_msg
 
-    return df_storico, api_ok, 0
+    return df_storico, api_ok, stato_msg
 
-df_globale, nexus_ok, letti_ora = aggiorna_database_live()
+df_globale, nexus_ok, stato_nexus = aggiorna_database_live()
 
 if nexus_ok:
-    st.sidebar.success(f"✅ Entropia Nexus LIVE! ({len(df_globale)} total Globals)")
+    st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
-    st.sidebar.warning(f"⚠️ Nexus API pause (CSV cache: {len(df_globale)} Globals)")
+    st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
 
 # ==============================================================================
 # >>>>>> BLOCK >>> D <<< (PLANET MOB DATABASE PART 1: A - K)

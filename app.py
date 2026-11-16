@@ -248,7 +248,6 @@ def scarica_da_entropia_nexus(lista_mob_noti):
         "Origin": dominio_base
     }
     
-    # 1. Tentativo API JSON diretta
     for url in api_urls:
         try:
             r = scraper.get(url, headers=headers_api, timeout=10)
@@ -287,7 +286,6 @@ def scarica_da_entropia_nexus(lista_mob_noti):
         except Exception:
             continue
 
-    # 2. Parsing automatico dalla pagina /globals e dalla Homepage
     for web_url in [url_pagina_globals, dominio_base]:
         try:
             r_web = scraper.get(web_url, timeout=12)
@@ -359,53 +357,6 @@ def scarica_da_entropia_nexus(lista_mob_noti):
 
     return [], False, "Cloudflare block su IP cloud"
 
-def aggiorna_database_live():
-    if os.path.exists(PATH_DATABASE_CSV) and os.path.getsize(PATH_DATABASE_CSV) > 0:
-        try:
-            df_storico = pd.read_csv(PATH_DATABASE_CSV)
-            df_storico["Timestamp"] = pd.to_datetime(df_storico["Timestamp"], errors="coerce")
-            if "Player" not in df_storico.columns:
-                df_storico["Player"] = "Unknown"
-        except Exception:
-            df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
-    else:
-        df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
-
-    tutti_mobs_noti = [m for mobs in MOBS_PER_PIANETA.values() for m in mobs]
-    nuovi_record, api_ok, stato_msg = scarica_da_entropia_nexus(tutti_mobs_noti)
-
-    if nuovi_record:
-        df_nuovi = pd.DataFrame(nuovi_record)
-        df_totale = pd.concat([df_storico, df_nuovi], ignore_index=True)
-    else:
-        df_totale = df_storico.copy()
-
-    if len(df_totale) > 0:
-        df_totale = df_totale.dropna(subset=["Timestamp", "Mob", "PED"])
-        df_totale["Mob"] = df_totale["Mob"].astype(str).str.strip().str.title()
-        df_totale["Player"] = df_totale["Player"].fillna("Unknown").astype(str).str.strip()
-        df_totale["Ha_Player"] = (df_totale["Player"] != "Unknown").astype(int)
-
-        df_totale = df_totale.sort_values(
-            ["Player", "Mob", "PED", "Timestamp", "Ha_Player"],
-            ascending=[True, True, True, True, False]
-        )
-
-        diff_sec = df_totale.groupby(["Player", "Mob", "PED"])["Timestamp"].diff().dt.total_seconds()
-        df_totale = df_totale[diff_sec.isna() | (diff_sec > 300)]
-
-        df_totale = df_totale.drop(columns=["Ha_Player"]).sort_values("Timestamp", ascending=True)
-        df_totale.to_csv(PATH_DATABASE_CSV, index=False)
-
-    return df_totale, api_ok, stato_msg
-
-df_globale, nexus_ok, stato_nexus = aggiorna_database_live()
-
-if nexus_ok:
-    st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
-else:
-    st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
-
 @st.cache_data(show_spinner=False)
 def analizza_chat_log_cache(file_bytes):
     try:
@@ -431,23 +382,72 @@ def analizza_chat_log_cache(file_bytes):
             })
     return pd.DataFrame(nuovi_log) if nuovi_log else pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
 
+def aggiorna_database_live(df_da_log=None):
+    if os.path.exists(PATH_DATABASE_CSV) and os.path.getsize(PATH_DATABASE_CSV) > 0:
+        try:
+            df_storico = pd.read_csv(PATH_DATABASE_CSV)
+            df_storico["Timestamp"] = pd.to_datetime(df_storico["Timestamp"], errors="coerce")
+            if "Player" not in df_storico.columns:
+                df_storico["Player"] = "Unknown"
+        except Exception:
+            df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
+    else:
+        df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
+
+    tutti_mobs_noti = [m for mobs in MOBS_PER_PIANETA.values() for m in mobs]
+    nuovi_record, api_ok, stato_msg = scarica_da_entropia_nexus(tutti_mobs_noti)
+
+    parti = [df_storico]
+    if nuovi_record:
+        parti.append(pd.DataFrame(nuovi_record))
+    if df_da_log is not None and len(df_da_log) > 0:
+        parti.append(df_da_log)
+
+    df_totale = pd.concat(parti, ignore_index=True)
+
+    if len(df_totale) > 0:
+        df_totale = df_totale.dropna(subset=["Timestamp", "Mob", "PED"])
+        df_totale["Mob"] = df_totale["Mob"].astype(str).str.strip().str.title()
+        df_totale["Player"] = df_totale["Player"].fillna("Unknown").astype(str).str.strip()
+        df_totale["Ha_Player"] = (df_totale["Player"] != "Unknown").astype(int)
+
+        df_totale = df_totale.sort_values(
+            ["Player", "Mob", "PED", "Timestamp", "Ha_Player"],
+            ascending=[True, True, True, True, False]
+        )
+
+        diff_sec = df_totale.groupby(["Player", "Mob", "PED"])["Timestamp"].diff().dt.total_seconds()
+        df_totale = df_totale[diff_sec.isna() | (diff_sec > 300)]
+
+        df_totale = df_totale.drop(columns=["Ha_Player"]).sort_values("Timestamp", ascending=True)
+        df_totale.to_csv(PATH_DATABASE_CSV, index=False)
+
+    return df_totale, api_ok, stato_msg
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("📂 Sync from chat.log (Intraday)")
 uploaded_chat_log = st.sidebar.file_uploader("Upload Entropia chat.log:", type=["log", "txt"])
 
+df_log_corrente = None
 if uploaded_chat_log is not None:
-    df_log = analizza_chat_log_cache(uploaded_chat_log.getvalue())
-    if len(df_log) > 0:
-        if "ultimo_log_unito" not in st.session_state or st.session_state.ultimo_log_unito != uploaded_chat_log.name:
-            df_globale = pd.concat([df_globale, df_log], ignore_index=True)
-            df_globale = df_globale.drop_duplicates(subset=["Timestamp", "Player", "Mob", "PED"]).sort_values("Timestamp")
-            df_globale.to_csv(PATH_DATABASE_CSV, index=False)
-            st.session_state.ultimo_log_unito = uploaded_chat_log.name
-        st.sidebar.success(f"✅ {len(df_log)} Globals synced from chat.log!")
+    df_log_corrente = analizza_chat_log_cache(uploaded_chat_log.getvalue())
+
+df_globale, nexus_ok, stato_nexus = aggiorna_database_live(df_log_corrente)
+
+if nexus_ok:
+    st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
+else:
+    st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
+
+if df_log_corrente is not None:
+    if len(df_log_corrente) > 0:
+        st.sidebar.success(f"✅ {len(df_log_corrente)} Globals active from chat.log!")
     else:
         st.sidebar.warning("⚠️ No hunting globals found in chat.log.")
 
 st.sidebar.markdown("---")
+
+
 
 # ==============================================================================
 # >>>>>> BLOCK >>> D <<< (PLANET MOB DATABASE PART 1: A - K)

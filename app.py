@@ -221,7 +221,7 @@ st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
 @st.cache_data(ttl=15)
 def scarica_da_entropia_nexus():
-    url = "https://entropianexus.com"
+    url = "https://api.entropianexus.com"
     try:
         scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
         r = scraper.get(url, timeout=12)

@@ -498,6 +498,17 @@ indice_pressione_pool = min(100, max(5, punteggio_ritardo + punteggio_deficit + 
 # ==============================================================================
 
 st.title(f"🚦 Loot & Timing Predictor: {mob_selezionato}")
+st.markdown("""
+<div style="background-color: #161b22; border: 1px solid #30363d; border-left: 4px solid #00e676; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; color: #e6edf3;">
+    <div style="margin-bottom: 6px;">
+        📩 <b>Want to suggest new mobs, planets, or features?</b> Contact me via <b>In-Game Mail / PM</b>: <span style="color: #00e676; font-weight: bold;">vanessa bil any</span>
+    </div>
+    <div style="font-size: 12.5px; color: #9da7b3;">
+        🙏 <b>Special Thanks:</b> Powered by <a href="https://entropianexus.com" target="_blank" style="color: #58a6ff; text-decoration: none;">Entropia Nexus</a> live data & hosted on <a href="https://github.com" target="_blank" style="color: #58a6ff; text-decoration: none;">GitHub</a>. Huge thanks to <b>Fabio (Ephestus)</b> for the dedicated hunting & field testing!
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 
 c1, c2, c3, c4, c5 = st.columns([1.1, 1.2, 1.4, 1.6, 1.5])
 with c1:

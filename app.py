@@ -394,8 +394,62 @@ else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
 
 # ==============================================================================
-# >>>>>> BLOCK >>> D <<< (PLANET MOB DATABASE PART 1: A - K)
+# >>>>>> BLOCK >>> D <<< (CHAT.LOG UPLOADER, INTRADAY SYNC & CSV EXPORT)
 # ==============================================================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📂 Sync from chat.log (Intraday)")
+uploaded_chat_log = st.sidebar.file_uploader("Upload Entropia chat.log:", type=["log", "txt"])
+
+if uploaded_chat_log is not None:
+    try:
+        raw_bytes = uploaded_chat_log.getvalue()
+        try:
+            testo_log = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            testo_log = raw_bytes.decode("latin-1", errors="ignore")
+
+        pattern_chat = re.compile(
+            r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+\[Globals\]\s+\[\]\s+(.+?)\s+killed a creature\s+\((.+?)\)\s+with a value of\s+(\d+)\s+PED",
+            re.IGNORECASE
+        )
+        trovati_log = pattern_chat.findall(testo_log)
+
+        if trovati_log:
+            nuovi_log = []
+            for ts_s, pl_s, mob_s, ped_s in trovati_log:
+                ts_dt = pd.to_datetime(ts_s, errors="coerce")
+                if pd.notna(ts_dt):
+                    ts_it = ts_dt.tz_localize("UTC").tz_convert(TZ_ITALIA).tz_localize(None)
+                    nuovi_log.append({
+                        "Timestamp": ts_it,
+                        "Player": pl_s.strip(),
+                        "Mob": mob_s.strip().title(),
+                        "PED": int(ped_s)
+                    })
+
+            if nuovi_log:
+                df_log = pd.DataFrame(nuovi_log)
+                df_globale = pd.concat([df_globale, df_log], ignore_index=True)
+                df_globale = df_globale.drop_duplicates(subset=["Timestamp", "Player", "Mob", "PED"]).sort_values("Timestamp")
+                df_globale.to_csv(PATH_DATABASE_CSV, index=False)
+                st.sidebar.success(f"✅ Loaded {len(df_log)} Globals from chat.log!")
+        else:
+            st.sidebar.warning("⚠️ No hunting globals found in chat.log.")
+    except Exception as e:
+        st.sidebar.error(f"Error reading chat.log: {e}")
+
+if len(df_globale) > 0:
+    csv_download = df_globale.to_csv(index=False).encode("utf-8")
+    st.sidebar.download_button(
+        label="💾 Download Updated CSV",
+        data=csv_download,
+        file_name="storico_semaforo_pulito.csv",
+        mime="text/csv"
+    )
+
+st.sidebar.markdown("---")
+
 
 INFO_MOB = {
     "Drill Bot": ("Planet Cyrene", "Lv. 4-9 (Small Robot)", "135400, 76800 (A.R.C. Staging / Robot Area)", "Electronic Comps, Motion Sensors, Kinsite Ore (115-135% MU)", "/wp [Cyrene, 135400, 76800, 110, Drill Bot]"),

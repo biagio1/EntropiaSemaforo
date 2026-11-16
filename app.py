@@ -211,128 +211,97 @@ if c_btn2.button("🟡 Yellow"):
 if c_btn3.button("🔴 Red"):
     attiva_allarme_sonoro("ROSSO")
 # ==============================================================================
-# >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & WEB FALLBACK)
+# >>>>>> BLOCK >>> C <<< (ENTROPIA NEXUS LIVE API & NEXT.JS DATA FIX)
 # ==============================================================================
 
 import cloudscraper
+import json
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
 @st.cache_data(ttl=15)
 def scarica_da_entropia_nexus():
-    scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
+    scraper = cloudscraper.create_scraper(
+        browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
+    )
     
-    # 1. Tentativo tramite API diretta
-    try:
-        r = scraper.get("https://entropianexus.com", headers={"Accept": "application/json"}, timeout=10)
-        if r.status_code == 200 and r.text.strip().startswith(("{", "[")):
-            data = r.json()
-            lista_globals = data.get("globals", []) if isinstance(data, dict) else data
-            records = []
-            for g in lista_globals:
-                if str(g.get("type", "")).lower() != "hunting":
-                    continue
-                target_mob = str(g.get("target") or "").strip()
-                ped_val = g.get("value")
-                ts_raw = g.get("timestamp")
-                player_nome = str(g.get("player") or "Unknown").strip()
-                if target_mob and ped_val is not None and ts_raw:
-                    ts_utc = pd.to_datetime(ts_raw, utc=True, errors="coerce")
-                    if pd.notna(ts_utc):
-                        ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None)
-                        records.append({
-                            "Timestamp": ts_it,
-                            "Player": player_nome if player_nome else "Unknown",
-                            "Mob": target_mob.title(),
-                            "PED": int(float(ped_val))
-                        })
-            if records:
-                return records, True, f"API OK ({len(records)} hunting)"
-    except Exception:
-        pass
+    # 1. Tentativo tramite gli endpoint API reali di Entropia Nexus
+    api_urls = [
+        "https://entropianexus.com",
+        "https://entropianexus.com",
+        "https://entropianexus.com"
+    ]
+    
+    for url in api_urls:
+        try:
+            r = scraper.get(url, headers={"Accept": "application/json"}, timeout=10)
+            if r.status_code == 200 and r.text.strip().startswith(("{", "[")):
+                data = r.json()
+                # Gestisce sia liste dirette che oggetti annidati (es. {"data": [...]})
+                if isinstance(data, list):
+                    lista_globals = data
+                elif isinstance(data, dict):
+                    lista_globals = data.get("globals") or data.get("data") or data.get("items") or []
+                else:
+                    lista_globals = []
 
-    # 2. Fallback: lettura diretta dalla pagina pubblica /globals
+                records = []
+                for g in lista_globals:
+                    tipo = str(g.get("type") or g.get("category") or "").lower()
+                    if tipo and tipo != "hunting":
+                        continue
+                    
+                    # Estrae nome mob pulendo eventuale maturità (es. "Atrox Young" -> "Atrox")
+                    target_raw = str(g.get("target") or g.get("mob") or g.get("creature") or g.get("name") or "").strip()
+                    ped_val = g.get("value") or g.get("ped") or g.get("amount")
+                    ts_raw = g.get("timestamp") or g.get("createdAt") or g.get("date")
+                    player_nome = str(g.get("player") or g.get("avatar") or g.get("user") or "Unknown").strip()
+                    
+                    if target_raw and ped_val is not None and ts_raw:
+                        ts_utc = pd.to_datetime(ts_raw, utc=True, errors="coerce")
+                        if pd.notna(ts_utc):
+                            ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None)
+                            records.append({
+                                "Timestamp": ts_it,
+                                "Player": player_nome if player_nome else "Unknown",
+                                "Mob": target_raw.title(),
+                                "PED": int(float(ped_val))
+                            })
+                if records:
+                    return records, True, f"API OK ({len(records)} hunting)"
+        except Exception:
+            continue
+
+    # 2. Fallback: lettura dalla pagina /globals (inclusi script JSON Next.js)
     try:
         r_web = scraper.get("https://entropianexus.com", timeout=10)
         if r_web.status_code == 200:
-            testo_pulito = re.sub(r"<[^>]+>", " ", r_web.text)
-            testo_pulito = re.sub(r"\s+", " ", testo_pulito)
-            matches = re.findall(
-                r"Hunting\s+([A-Za-z0-9\s\'\-\.]{2,45}?)\s+([A-Z][A-Za-z0-9\s\-]{2,35}?)\s+(\d+(?:\.\d+)?)\s*PED\s+(just now|\d+m ago|\d+h ago)",
-                testo_pulito
-            )
+            # Cerca prima eventuali JSON embedded nel sorgente Next.js
+            json_matches = re.findall(r'\{[^{}]*"value"\s*:\s*\d+[^{}]*"target"\s*:\s*"[^"]+"[^{}]*\}', r_web.text)
             records_web = []
-            adesso = ora_italia_now()
-            for player_txt, mob_txt, ped_txt, ago_txt in matches:
-                minuti_fa = 0
-                if "m ago" in ago_txt:
-                    minuti_fa = int(re.search(r"\d+", ago_txt).group())
-                elif "h ago" in ago_txt:
-                    minuti_fa = int(re.search(r"\d+", ago_txt).group()) * 60
-                ts_calc = (adesso - timedelta(minutes=minuti_fa)).replace(second=0, microsecond=0)
-                records_web.append({
-                    "Timestamp": ts_calc,
-                    "Player": player_txt.strip() or "Unknown",
-                    "Mob": mob_txt.strip().title(),
-                    "PED": int(float(ped_txt))
-                })
+            for jm in json_matches:
+                try:
+                    g = json.loads(jm)
+                    if str(g.get("type", "hunting")).lower() == "hunting":
+                        ts_utc = pd.to_datetime(g.get("timestamp"), utc=True, errors="coerce")
+                        ts_it = ts_utc.tz_convert(TZ_ITALIA).tz_localize(None) if pd.notna(ts_utc) else ora_italia_now()
+                        records_web.append({
+                            "Timestamp": ts_it,
+                            "Player": str(g.get("player") or "Unknown").strip(),
+                            "Mob": str(g.get("target")).strip().title(),
+                            "PED": int(float(g.get("value")))
+                        })
+                except Exception:
+                    pass
+
             if records_web:
-                return records_web, True, f"Web OK ({len(records_web)} hunting)"
-            return [], False, "0 match su pagina"
+                return records_web, True, f"NextJS OK ({len(records_web)} hunting)"
+            
+            return [], False, "Struttura pagina cambiata (0 match)"
         return [], False, f"HTTP {r_web.status_code}"
     except Exception as e:
         return [], False, str(e)[:40]
-
-def aggiorna_database_live():
-    if os.path.exists(PATH_DATABASE_CSV) and os.path.getsize(PATH_DATABASE_CSV) > 0:
-        try:
-            df_storico = pd.read_csv(PATH_DATABASE_CSV)
-            df_storico["Timestamp"] = pd.to_datetime(df_storico["Timestamp"], errors="coerce")
-            if "Player" not in df_storico.columns:
-                df_storico["Player"] = "Unknown"
-        except Exception:
-            df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
-    else:
-        df_storico = pd.DataFrame(columns=["Timestamp", "Player", "Mob", "PED"])
-
-    nuovi_record, api_ok, stato_msg = scarica_da_entropia_nexus()
-
-    if nuovi_record:
-        df_nuovi = pd.DataFrame(nuovi_record)
-        df_totale = pd.concat([df_storico, df_nuovi], ignore_index=True)
-    else:
-        df_totale = df_storico.copy()
-
-    if len(df_totale) > 0:
-        df_totale = df_totale.dropna(subset=["Timestamp", "Mob", "PED"])
-        df_totale["Mob"] = df_totale["Mob"].astype(str).str.strip().str.title()
-        df_totale["Player"] = df_totale["Player"].fillna("Unknown").astype(str).str.strip()
-        df_totale["Ha_Player"] = (df_totale["Player"] != "Unknown").astype(int)
-
-        # Ordina per Player, Mob, PED e Timestamp per individuare i duplicati ravvicinati
-        df_totale = df_totale.sort_values(
-            ["Player", "Mob", "PED", "Timestamp", "Ha_Player"],
-            ascending=[True, True, True, True, False]
-        )
-
-        # Calcola la differenza in secondi rispetto al record identico precedente
-        diff_sec = df_totale.groupby(["Player", "Mob", "PED"])["Timestamp"].diff().dt.total_seconds()
-
-        # Mantiene solo la prima registrazione e scarta i duplicati entro 300 secondi (5 minuti)
-        df_totale = df_totale[diff_sec.isna() | (diff_sec > 300)]
-
-        df_totale = df_totale.drop(columns=["Ha_Player"]).sort_values("Timestamp", ascending=True)
-        df_totale.to_csv(PATH_DATABASE_CSV, index=False)
-
-    return df_totale, api_ok, stato_msg
-
-df_globale, nexus_ok, stato_nexus = aggiorna_database_live()
-
-if nexus_ok:
-    st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
-else:
-    st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
 
 
 

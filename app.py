@@ -455,14 +455,10 @@ st.sidebar.markdown("---")
 
 INFO_MOB = {
     "Drill Bot": ("Planet Cyrene", "Lv. 4-9 (Small Robot)", "135400, 76800 (A.R.C. Staging / Robot Area)", "Electronic Comps, Motion Sensors, Kinsite Ore (115-135% MU)", "/wp [Cyrene, 135400, 76800, 110, Drill Bot]"),
-
-
-     "Drill Bot": ("Planet Cyrene", "Lv. 4-9 (Small Robot)", "135400, 76800 (A.R.C. Staging / Robot Area)", "Electronic Comps, Motion Sensors, Kinsite Ore (115-135% MU)", "/wp [Cyrene, 135400, 76800, 110, Drill Bot]"),
     "Oratan Prospector": ("Planet Arkadia", "Lv. 8-16 (Young/Mature)", "21500, 19800 (IFN Outposts / Arkadia)", "Oratan Axe, Arkadian Oils, Weapons (115-135% MU)", "/wp [Arkadia, 21500, 19800, 115, Oratan Prospector]"),
     "Scout Bot": ("Planet Cyrene", "Lv. 3-7 (Small Robot)", "136100, 77400 (Cyrene Robot Outpost)", "Basic Targeting Chip, Electronic Comps (115-130% MU)", "/wp [Cyrene, 136100, 77400, 110, Scout Bot]"),
     "Starving Atrax": ("Planet Calypso", "Lv. 8-12 (Low HP Atrax)", "76400, 68500 (Ithaca / Fort Fury)", "Atrax Bone, Animal Muscle Oil (115-130% MU)", "/wp [Calypso, 76400, 68500, 130, Starving Atrax]"),
-  
-"Kreltin": ("Planet Calypso", "Lv. 15-23 (Young/Mature)", "84200, 86500 (Crystal Palace / North)", "Kreltin Soft Shell, Rare Loot (120-140% MU)", "/wp [Calypso, 84200, 86500, 125, Kreltin]"),
+    "Kreltin": ("Planet Calypso", "Lv. 15-23 (Young/Mature)", "84200, 86500 (Crystal Palace / North)", "Kreltin Soft Shell, Rare Loot (120-140% MU)", "/wp [Calypso, 84200, 86500, 125, Kreltin]"),
     "Longu": ("Planet Calypso", "Lv. 11-19 (Young/Mature)", "62400, 81500 (Longu Land / North)", "Longu Claw, Skin, Muscle Oil (115-130% MU)", "/wp [Calypso, 62400, 81500, 120, Longu]"),
     "Mang Chang": ("Planet Calypso", "Lv. 35-55 (Young/Mature)", "86500, 89200 (East Scylla)", "High-end Armor/Weapons, Rare Oils (125-160% MU)", "/wp [Calypso, 86500, 89200, 140, Mang Chang]"),
     "Merp": ("Planet Calypso", "Lv. 4-9 (Young/Mature)", "69200, 77500 (Billy's Spaceship)", "Merp Wool, Soft Hide (110-122% MU)", "/wp [Calypso, 69200, 77500, 115, Merp]"),

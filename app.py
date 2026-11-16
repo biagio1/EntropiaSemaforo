@@ -220,17 +220,15 @@ import json
 st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Entropia Nexus Live Feed")
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=15)
 def scarica_da_entropia_nexus(lista_mob_noti):
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
     )
     
     dominio_base = "https://entropianexus.com"
-    dominio_api = "https://entropianexus.com"
     url_pagina_globals = dominio_base + "/globals"
     
-    # Inizializza cookie di sessione visitando il sito
     try:
         scraper.get(dominio_base, timeout=8)
     except Exception:
@@ -238,7 +236,7 @@ def scarica_da_entropia_nexus(lista_mob_noti):
 
     api_urls = [
         dominio_base + "/api/globals?limit=100",
-        dominio_api + "/globals?limit=100"
+        dominio_base + "/globals?limit=100"
     ]
     
     headers_api = {
@@ -251,7 +249,7 @@ def scarica_da_entropia_nexus(lista_mob_noti):
         "Sec-Fetch-Site": "same-origin"
     }
     
-    # Passaggio 1: Tentativo API JSON (100 globals, inclusi mini-global >= 5 PED)
+    # Passaggio 1: Tentativo API JSON
     for url in api_urls:
         try:
             r = scraper.get(url, headers=headers_api, timeout=10)
@@ -299,8 +297,9 @@ def scarica_da_entropia_nexus(lista_mob_noti):
                 testo = re.sub(r"\s+", " ", testo)
                 
                 matches = re.findall(
-                    r"Hunting\s+(.+?)\s+(\d+(?:\.\d+)?)\s*PED\s+(just now|\d+\s*(?:s|m|h)\s*ago)",
-                    testo
+                    r"Hunting\s+(.+?)\s+(\d+(?:\.\d+)?)\s*PED(?:\s+HoF)?\s+(just now|\d+\s*(?:s|m|h)\s*ago)",
+                    testo,
+                    re.IGNORECASE
                 )
                 
                 if matches:
@@ -310,14 +309,14 @@ def scarica_da_entropia_nexus(lista_mob_noti):
                     
                     for blocco_testo, ped_txt, ago_txt in matches:
                         blocco_pulito = blocco_testo.strip()
-                        if len(blocco_pulito) > 90:
+                        if len(blocco_pulito) > 95:
                             continue
                         
                         minuti_fa = 0
-                        if "m" in ago_txt:
+                        if "m" in ago_txt.lower():
                             m_num = re.search(r"\d+", ago_txt)
                             minuti_fa = int(m_num.group()) if m_num else 0
-                        elif "h" in ago_txt:
+                        elif "h" in ago_txt.lower():
                             h_num = re.search(r"\d+", ago_txt)
                             minuti_fa = int(h_num.group()) * 60 if h_num else 0
                             
@@ -393,12 +392,6 @@ if nexus_ok:
     st.sidebar.success(f"✅ Entropia Nexus LIVE! [{stato_nexus}] ({len(df_globale)} Globals)")
 else:
     st.sidebar.warning(f"⚠️ Nexus: {stato_nexus} (CSV: {len(df_globale)} Globals)")
-
-st.sidebar.caption(f"🕒 IT Time: **{ora_italia_now().strftime('%H:%M:%S')}** (Europe/Rome)")
-
-
-
-
 
 # ==============================================================================
 # >>>>>> BLOCK >>> D <<< (PLANET MOB DATABASE PART 1: A - K)

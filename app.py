@@ -422,7 +422,7 @@ pianeta_mob, grado_mob, coord_mob, drop_mob, wp_mob = INFO_MOB.get(
 # >>>>>> BLOCK >>> F <<< (PREDICTOR CALCULATIONS & SIDEBAR SUMMARY)
 # ==============================================================================
 
-ora_attuale = datetime.now()
+ora_attuale = ora_italia_now()
 inizio_oggi = ora_attuale.replace(hour=0, minute=0, second=0, microsecond=0)
 sette_giorni_fa = ora_attuale - timedelta(days=7)
 
